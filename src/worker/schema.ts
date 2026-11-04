@@ -6,6 +6,7 @@ import automationKeysSql from '../../migrations/0005_automation_keys.sql';
 import actionSourcesSql from '../../migrations/0006_action_sources.sql';
 import telegramButtonsSql from '../../migrations/0007_telegram_buttons.sql';
 import snapshotRequestsSql from '../../migrations/0008_snapshot_requests.sql';
+import recycleModeSql from '../../migrations/0009_recycle_mode.sql';
 import { PanelError } from './errors';
 
 const migrations = [
@@ -17,6 +18,7 @@ const migrations = [
   { name: '0006_action_sources.sql', sql: actionSourcesSql },
   { name: '0007_telegram_buttons.sql', sql: telegramButtonsSql },
   { name: '0008_snapshot_requests.sql', sql: snapshotRequestsSql },
+  { name: '0009_recycle_mode.sql', sql: recycleModeSql },
 ];
 const initialization = new WeakMap<object, Promise<void>>();
 
