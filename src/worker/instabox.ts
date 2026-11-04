@@ -15,6 +15,7 @@ export function machineView(raw: unknown): Machine {
     state: m.state as MachineState, operationId: typeof m.operationId === 'string' ? m.operationId : null,
     revision: Number(m.revision) || 0, autoSuspendAfterSeconds: typeof m.autoSuspendAfterSeconds === 'number' ? m.autoSuspendAfterSeconds : null,
     autoSuspendedAt: typeof m.autoSuspendedAt === 'string' ? m.autoSuspendedAt : undefined,
+    ...(typeof m.runStartedAt === 'string' ? { runStartedAt: m.runStartedAt } : {}),
     createdAt: typeof m.createdAt === 'string' ? m.createdAt : '', updatedAt: typeof m.updatedAt === 'string' ? m.updatedAt : '',
     spec: { vcpus: Number(m.spec?.vcpus) || 0, memMiB: Number(m.spec?.memMiB) || 0 },
     runtime: { ready: m.runtime?.ready === true,

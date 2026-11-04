@@ -1,4 +1,4 @@
-import { inKeepaliveWindow, validateSchedule, KEEPALIVE_INTERVAL_MINUTES, KEEPALIVE_MAX_MACHINES, type KeepaliveMode, type KeepalivePolicy, type KeepaliveOverview, type TimeWindow } from '../shared/keepalive';
+import { inKeepaliveWindow, validateSchedule, KEEPALIVE_INTERVAL_MINUTES, KEEPALIVE_MAX_MACHINES, RECYCLE_AFTER_MINUTES, type KeepaliveMode, type KeepalivePolicy, type KeepaliveOverview, type TimeWindow } from '../shared/keepalive';
 import { decryptKey } from './crypto';
 import { type AccountRow, type ActionRow } from './db';
 import { PanelError } from './errors';
@@ -93,7 +93,16 @@ async function runPolicy(env: KeepaliveEnv, row: PolicyRow, dataKey: string, fet
     } else {
       const machine = await remote.machine(row.machine_id);
       state = machine.state;
-      if (machine.state !== 'suspended' || machine.operationId) {
+      // 回收保活：运行接近免费版 max-run（480 分钟）时主动暂停，清零冷却计数；
+      // 恢复交给下一次定时检查的 suspended → resume 路径。
+      const runStarted = typeof machine.runStartedAt === 'string' ? Date.parse(machine.runStartedAt) : NaN;
+      const recycleDue = row.mode === 'recycle' && machine.state === 'running' && !machine.operationId
+        && Number.isFinite(runStarted) && timestamp - runStarted >= RECYCLE_AFTER_MINUTES * 60000;
+      if (machine.operationId) {
+        await saveResult(db, row, timestamp, state, '当前状态无需恢复');
+        return;
+      }
+      if (machine.state !== 'suspended' && !recycleDue) {
         await saveResult(db, row, timestamp, state, machine.state === 'running' ? '运行正常' : machine.state === 'stopped' ? '已停止，等待手动启动' : '当前状态无需恢复');
         return;
       }
@@ -104,13 +113,14 @@ async function runPolicy(env: KeepaliveEnv, row: PolicyRow, dataKey: string, fet
       const pending = await db.prepare("SELECT id FROM insb_actions WHERE machine_id=? AND state IN ('submitting','queued','running','unknown') LIMIT 1").bind(row.machine_id).first();
       if (pending) { await saveResult(db, row, timestamp, state, '等待已有操作确认'); return; }
       if (!await stillActive(db, row)) return;
+      const actionType = recycleDue ? 'suspend' : 'resume';
       const requestId = crypto.randomUUID(), stamp = new Date(timestamp).toISOString();
       const claimed = await db.batch([
         db.prepare(`INSERT INTO insb_actions (id,account_id,machine_id,machine_name,type,state,created_at,updated_at)
-          SELECT ?,k.account_id,k.machine_id,k.machine_name,'resume','submitting',?,? FROM insb_keepalive k
+          SELECT ?,k.account_id,k.machine_id,k.machine_name,?,'submitting',?,? FROM insb_keepalive k
           JOIN insb_accounts a ON a.id=k.account_id WHERE k.machine_id=? AND k.version=? AND k.mode<>'off'
           AND a.enabled=1 AND a.deleted_at IS NULL AND NOT EXISTS
-          (SELECT id FROM insb_actions WHERE machine_id=k.machine_id AND state IN ('submitting','queued','running','unknown'))`).bind(requestId, stamp, stamp, row.machine_id, row.version),
+          (SELECT id FROM insb_actions WHERE machine_id=k.machine_id AND state IN ('submitting','queued','running','unknown'))`).bind(requestId, actionType, stamp, stamp, row.machine_id, row.version),
         actionSourceStatement(db, requestId, 'keepalive'),
         db.prepare('UPDATE insb_keepalive SET action_id=? WHERE machine_id=? AND version=? AND EXISTS(SELECT id FROM insb_actions WHERE id=?)')
           .bind(requestId, row.machine_id, row.version, requestId),
@@ -126,9 +136,10 @@ async function runPolicy(env: KeepaliveEnv, row: PolicyRow, dataKey: string, fet
       return;
     }
     try {
-      const operation = await remote.change(row.machine_id, 'resume', 'panel-' + action.id);
+      const verb = action.type === 'suspend' ? '回收暂停' : '自动恢复';
+      const operation = await remote.change(row.machine_id, action.type, 'panel-' + action.id);
       await applyOperation(db, action, operation);
-      await saveResult(db, row, timestamp, state, operation.state === 'succeeded' ? '自动恢复已完成' : operation.state === 'failed' ? '自动恢复失败' : '已提交自动恢复');
+      await saveResult(db, row, timestamp, state, operation.state === 'succeeded' ? verb + '已完成' : operation.state === 'failed' ? verb + '失败' : verb + '已提交');
     } catch (error) {
       const failure = error instanceof PanelError ? error : new PanelError(502, 'submission_uncertain', '恢复结果待确认，将复用原请求重试。', true);
       await db.prepare("UPDATE insb_actions SET state=?,error_code=?,error_message=?,updated_at=? WHERE id=? AND state IN ('submitting','unknown')")

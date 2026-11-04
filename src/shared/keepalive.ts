@@ -1,4 +1,4 @@
-export type KeepaliveMode = 'off' | 'always' | 'windows';
+export type KeepaliveMode = 'off' | 'always' | 'windows' | 'recycle';
 export interface TimeWindow { start: string; end: string }
 export interface KeepalivePolicy {
   machineId: string; accountId: string; machineName: string; mode: KeepaliveMode;
@@ -11,10 +11,14 @@ export interface KeepaliveOverview {
 }
 export const KEEPALIVE_INTERVAL_MINUTES = 1;
 export const KEEPALIVE_MAX_MACHINES = 5;
+// 回收保活：机器连续运行到该分钟数时主动暂停，赶在免费版 480 分钟
+// max-run 强制暂停之前重置计时，避免冷却惩罚（第 2 次起 60 分钟以上）。
+// 主动 suspend 不计入冷却，恢复由下一次定时检查完成。
+export const RECYCLE_AFTER_MINUTES = 465;
 
 export function validateSchedule(value: unknown): { mode: KeepaliveMode; timezone: string; windows: TimeWindow[] } {
   const body = value as Record<string, unknown> | null;
-  if (!body || typeof body.mode !== 'string' || !['off', 'always', 'windows'].includes(body.mode)) throw new Error('请选择有效的保活模式。');
+  if (!body || typeof body.mode !== 'string' || !['off', 'always', 'windows', 'recycle'].includes(body.mode)) throw new Error('请选择有效的保活模式。');
   const mode = body.mode as KeepaliveMode;
   const timezone = typeof body.timezone === 'string' ? body.timezone : 'Asia/Shanghai';
   try { new Intl.DateTimeFormat('en', { timeZone: timezone }).format(); }
@@ -42,7 +46,7 @@ function minutes(value: string) {
   return hour * 60 + minute;
 }
 export function inKeepaliveWindow(policy: { mode: KeepaliveMode; timezone: string; windows: TimeWindow[] }, timestamp: number): boolean {
-  if (policy.mode !== 'windows') return policy.mode === 'always';
+  if (policy.mode !== 'windows') return policy.mode === 'always' || policy.mode === 'recycle';
   const parts = new Intl.DateTimeFormat('en-GB', { timeZone: policy.timezone, hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }).formatToParts(timestamp);
   const current = Number(parts.find(part => part.type === 'hour')?.value) * 60 + Number(parts.find(part => part.type === 'minute')?.value);
   return policy.windows.some(window => {

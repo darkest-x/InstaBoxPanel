@@ -10,7 +10,7 @@ export interface Account {
 export interface Machine {
   id: string; name: string; orgId: string; state: MachineState;
   operationId: string | null; revision: number; autoSuspendAfterSeconds: number | null;
-  autoSuspendedAt?: string; updatedAt: string; createdAt: string;
+  autoSuspendedAt?: string; runStartedAt?: string; updatedAt: string; createdAt: string;
   spec: { vcpus: number; memMiB: number };
   runtime: { ready: boolean; processesPreserved?: boolean };
 }

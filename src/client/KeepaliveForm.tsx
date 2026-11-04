@@ -27,7 +27,7 @@ export default function KeepaliveForm({ row, overview, close, saved }: {
     <p className="dialog-description">每 {overview.intervalMinutes} 分钟检查，暂停时自动恢复。关闭网页后仍然生效。</p>
     <form className="account-form keepalive-form" onSubmit={save}>
       <fieldset disabled={busy}><legend className="sr-only">保活模式</legend>
-        {([['off', '不保活', '默认，保持机器原有的自动暂停行为'], ['always', '全天保活', '全天检测并恢复已暂停的机器'], ['windows', '指定时间范围', '每天仅在指定时间窗口内检测和恢复']] as const).map(([value, label, description]) =>
+        {([['off', '不保活', '默认，保持机器原有的自动暂停行为'], ['always', '全天保活', '全天检测并恢复已暂停的机器'], ['recycle', '全天回收保活', '全天保活，并在运行 465 分钟时主动暂停一次，避开免费版 480 分钟强制暂停的冷却'], ['windows', '指定时间范围', '每天仅在指定时间窗口内检测和恢复']] as const).map(([value, label, description]) =>
           <label className={'keepalive-option' + (mode === value ? ' selected' : '')} key={value}><input type="radio" name="keepalive-mode" value={value} checked={mode === value} onChange={() => setMode(value)}/><span><strong>{label}</strong><small>{description}</small></span></label>)}
       </fieldset>
       {mode !== 'off' && <>
